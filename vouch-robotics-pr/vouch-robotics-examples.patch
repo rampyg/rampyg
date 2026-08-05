@@ -1,0 +1,313 @@
+From fda5b41864a1ff975c9355debc194d2288dd52e3 Mon Sep 17 00:00:00 2001
+From: Ramprasad G <groups.rampy1@gmail.com>
+Date: Wed, 5 Aug 2026 19:15:01 +0000
+Subject: [PATCH] Add robotics examples: EU AI Act evidence pack and VLA
+ accountability loop
+
+Two runnable examples under examples/ showing how the vouch.robotics
+credentials compose end to end for a robot driven by a VLA brain:
+
+- robotics_ai_act_evidence_pack.py: assemble a robot's hardware-rooted
+  identity, model provenance, physical capability scope, and tamper-evident
+  safety record, run check_conformance for eu-ai-act-high-risk and iso-10218,
+  then sign and verify a RobotConformanceAttestation over the report.
+- robotics_vla_accountability_loop.py: wrap a VLA brain (e.g. Gemini Robotics
+  ER 2) - sign model provenance on load, gate each proposed action against the
+  physical capability scope before actuation, and record every decision to a
+  tamper-evident encrypted black box.
+
+Index both in examples/README.md. Formatted with black; ruff clean.
+
+Signed-off-by: Ramprasad G <groups.rampy1@gmail.com>
+
+Co-Authored-By: Claude Opus 4.8 <noreply@anthropic.com>
+Claude-Session: https://claude.ai/code/session_01Jmk45Y6oAxCHwHrxRjmb35
+---
+ examples/README.md                           |   2 +
+ examples/robotics_ai_act_evidence_pack.py    | 117 ++++++++++++++++
+ examples/robotics_vla_accountability_loop.py | 136 +++++++++++++++++++
+ 3 files changed, 255 insertions(+)
+ create mode 100644 examples/robotics_ai_act_evidence_pack.py
+ create mode 100644 examples/robotics_vla_accountability_loop.py
+
+diff --git a/examples/README.md b/examples/README.md
+index d6c1996..cbe7329 100644
+--- a/examples/README.md
++++ b/examples/README.md
+@@ -123,6 +123,8 @@ See also the integration-specific READMEs in [browser-extension/](browser-extens
+ | [reputation_demo.py](reputation_demo.py) | Runs a standalone reputation example. | `python reputation_demo.py` |
+ | [mcp_trust_lifecycle.py](mcp_trust_lifecycle.py) | Walks one accountable agent task through the Vouch MCP lifecycle tools in order: delegate, check_action, check_trust, disclose_ai_origin, scan, reputation, attribute. | `python mcp_trust_lifecycle.py` |
+ | [robotics_demo.py](robotics_demo.py) | Demonstrates robotics identity and trust flow. | `python robotics_demo.py` |
++| [robotics_ai_act_evidence_pack.py](robotics_ai_act_evidence_pack.py) | Assembles a robot's credentials into a signed, clause-by-clause EU AI Act / ISO 10218 conformance evidence pack an assessor can verify offline. | `python robotics_ai_act_evidence_pack.py` |
++| [robotics_vla_accountability_loop.py](robotics_vla_accountability_loop.py) | Wraps a VLA "brain" (e.g. Gemini Robotics ER 2): signs model provenance on load, gates each proposed action against the physical scope before actuation, and records every decision to a tamper-evident black box. | `python robotics_vla_accountability_loop.py` |
+ | [disconnected_exchange_demo.py](disconnected_exchange_demo.py) | Two nodes authenticate and exchange authority fully offline over a simulated high-latency link, then apply the [bounded-staleness revocation](../docs/dtn-bounded-staleness-revocation.md) gate. | `python disconnected_exchange_demo.py` |
+ | [hardware_seam_demo.py](hardware_seam_demo.py) | A verifier decides whether to trust a peer for a maneuver using (simulated) sensors: freshness, channel-geometry presence, triangulated location, time-quality, kinematics, and integrity, all offline. | `python hardware_seam_demo.py` |
+ | [hardware_drivers/](hardware_drivers/) | Reference driver skeleton: copy and implement the `vouch.robotics.hardware` sensor Protocols for your platform. | `python hardware_drivers/drivers.py` |
+diff --git a/examples/robotics_ai_act_evidence_pack.py b/examples/robotics_ai_act_evidence_pack.py
+new file mode 100644
+index 0000000..a765987
+--- /dev/null
++++ b/examples/robotics_ai_act_evidence_pack.py
+@@ -0,0 +1,117 @@
++"""
++EU AI Act (and ISO 10218) compliance evidence pack for a robot.
++
++A high-risk robot assembles the Vouch credentials it already holds — a
++hardware-rooted identity, a model/config provenance attestation, a physical
++capability scope, and a tamper-evident safety record — and turns them into a
++single signed artifact a buyer, insurer, or notified body can verify:
++
++  1. build the credential set the robot carries,
++  2. run `check_conformance` against a regulatory profile to get a deterministic,
++     clause-by-clause report,
++  3. sign that report into a RobotConformanceAttestation, and
++  4. verify the attestation the way an external assessor would.
++
++The profiles are an open reference crosswalk, not legal advice; a deployment
++confirms each mapping against the current regulation text. See
++`vouch/robotics/conformance.py` for the built-in profiles.
++
++Run it:  python examples/robotics_ai_act_evidence_pack.py
++"""
++
++from vouch import Signer, generate_identity
++from vouch.robotics import (
++    SafetyEventLog,
++    build_conformance_attestation,
++    build_physical_scope_credential,
++    build_provenance_attestation,
++    build_safety_record,
++    check_conformance,
++    mint_robot_identity,
++    verify_conformance_attestation,
++    SoftwareRootOfTrust,
++)
++
++# Which regulatory profiles to produce evidence for. Both ship in
++# vouch/robotics/conformance.py; add "eu-machinery-2023-1230", "iso-ts-15066",
++# or "ul-3300" to widen the pack.
++PROFILE_IDS = ["eu-ai-act-high-risk", "iso-10218"]
++
++
++def build_credential_set(robot: Signer, robot_did: str):
++    """The evidence a fielded robot carries, one credential per capability."""
++
++    # 1. Hardware-rooted identity (ISO 10218 / UL 3300 identification).
++    root = SoftwareRootOfTrust(kind="TPM")  # a real deployment signs with the TPM
++    identity = mint_robot_identity(
++        robot, root, make="Acme Robotics", model="AR-7", serial="SN-000123"
++    )
++
++    # 2. Model + config provenance — which VLA brain and safety policy ran
++    #    (EU AI Act Art. 13 transparency, Art. 15 traceable-to-a-known-build).
++    provenance = build_provenance_attestation(
++        robot,
++        robot_did=robot_did,
++        model_name="gemini-robotics-er-2",
++        weights_hash="uER2-WEIGHTS-DIGEST",
++        safety_policy="did:web:acme.example.com#safety-policy-v3",
++        config={"max_torque": 12.5, "guardrails": ["slow_near_humans", "zone_lock"]},
++        version="2.0.0",
++    )
++
++    # 3. Physical capability scope — the enforced operating limits that give a
++    #    human oversight a hard envelope (EU AI Act Art. 14).
++    scope = build_physical_scope_credential(
++        robot,
++        subject_did=robot_did,
++        max_force_n=100.0,
++        max_speed_mps=2.0,
++        max_speed_near_humans_mps=0.5,
++        allowed_zones=["assembly-cell-3"],
++    )
++
++    # 4. Tamper-evident safety record — automatic event logging that travels
++    #    with the robot (EU AI Act Art. 12 record-keeping, ISO 10218-2 records).
++    log = SafetyEventLog()
++    log.append("maintenance", severity="info", details={"action": "calibration"})
++    log.append("near_miss", severity="low", details={"zone": "assembly-cell-3"})
++    log.append("manual_override", severity="medium", actor="did:web:operator.example.com")
++    record = build_safety_record(robot, robot_did=robot_did, summary=log.summarize())
++
++    return [identity, provenance, scope, record]
++
++
++def main() -> None:
++    kp = generate_identity(domain="robot.acme.example.com")
++    robot = Signer(private_key=kp.private_key_jwk, did=kp.did)
++    assessor = generate_identity(domain="notified-body.example.com")
++    assessor_signer = Signer(private_key=assessor.private_key_jwk, did=assessor.did)
++
++    credentials = build_credential_set(robot, kp.did)
++    print(f"Assembled {len(credentials)} credentials for {kp.did}\n")
++
++    for profile_id in PROFILE_IDS:
++        report = check_conformance(credentials, profile_id)
++        status = "CONFORMS" if report["conforms"] else "GAPS"
++        print(
++            f"=== {report['regime']} ({report['version']}) — {status} "
++            f"[{report['satisfiedCount']}/{report['totalCount']}] ==="
++        )
++        for req in report["requirements"]:
++            mark = "PASS" if req["satisfied"] else "MISSING"
++            print(f"  [{mark:>7}] {req['clause']}  {req['title']}")
++
++        # An assessor (or the robot itself) signs a point-in-time attestation
++        # binding the report by digest, then anyone re-verifies it offline.
++        attestation = build_conformance_attestation(
++            assessor_signer, robot_did=kp.did, report=report
++        )
++        ok, subject = verify_conformance_attestation(attestation, assessor.public_key_jwk)
++        print(
++            f"  signed attestation verifies: {ok}  "
++            f"(issuer={attestation['issuer']}, reportDigest={subject['reportDigest'][:16]}...)\n"
++        )
++
++
++if __name__ == "__main__":
++    main()
+diff --git a/examples/robotics_vla_accountability_loop.py b/examples/robotics_vla_accountability_loop.py
+new file mode 100644
+index 0000000..140bbdd
+--- /dev/null
++++ b/examples/robotics_vla_accountability_loop.py
+@@ -0,0 +1,136 @@
++"""
++Accountability loop for a robot driven by a VLA "brain" (e.g. Gemini Robotics
++ER 2, OpenVLA, a pi-family policy).
++
++Vouch does not perceive, plan, or move — it sits *under* whatever high-level
++model is deciding what to do, and makes each of those decisions attributable:
++
++  1. on model load, the robot signs a ModelProvenanceAttestation recording *which*
++     VLA build and safety policy it is about to run (swap `MODEL_NAME` for any
++     brain — the layer is model-agnostic);
++  2. as the brain proposes actions, each one is gated against the robot's physical
++     capability scope *before* actuation; and
++  3. every decision — allowed or denied — is written to an encrypted,
++     tamper-evident black box, so afterwards anyone can prove what the robot was
++     asked to do and what it actually did.
++
++The "brain" here is a fixed script standing in for the real model's output; the
++point is the Vouch layer around it, not the planner.
++
++Run it:  python examples/robotics_vla_accountability_loop.py
++"""
++
++import os
++
++from vouch import Signer, generate_identity
++from vouch.robotics import (
++    BlackBoxLog,
++    PhysicalAction,
++    SoftwareRootOfTrust,
++    build_physical_scope_credential,
++    build_provenance_attestation,
++    check_physical_action,
++    mint_robot_identity,
++    verify_blackbox_chain,
++    verify_provenance_attestation,
++)
++
++# Swap this for whichever brain drives the robot; the accountability layer is
++# identical either way.
++MODEL_NAME = "gemini-robotics-er-2"
++
++# What the brain proposes over one task. In a real system these come from the
++# model's action stream; the labels are only for the printout.
++PROPOSED_ACTIONS = [
++    (
++        "approach part",
++        PhysicalAction(force_n=20.0, speed_mps=1.2, near_humans=False, zone="assembly-cell-3"),
++    ),
++    (
++        "hand part to operator",
++        PhysicalAction(force_n=15.0, speed_mps=0.4, near_humans=True, zone="assembly-cell-3"),
++    ),
++    (
++        "rush the handoff",
++        PhysicalAction(force_n=15.0, speed_mps=1.5, near_humans=True, zone="assembly-cell-3"),
++    ),
++    (
++        "reach into next cell",
++        PhysicalAction(force_n=20.0, speed_mps=1.0, near_humans=False, zone="assembly-cell-4"),
++    ),
++]
++
++
++def main() -> None:
++    kp = generate_identity(domain="robot.acme.example.com")
++    robot = Signer(private_key=kp.private_key_jwk, did=kp.did)
++
++    # Hardware-rooted identity: this loop is attributable to one physical robot.
++    root = SoftwareRootOfTrust(kind="TPM")
++    identity = mint_robot_identity(
++        robot, root, make="Acme Robotics", model="AR-7", serial="SN-000123"
++    )
++    print(f"robot {identity['credentialSubject']['serial']} online ({kp.did})\n")
++
++    # (1) Provenance shim: record which VLA brain and safety policy is loaded.
++    config = {"planner": MODEL_NAME, "guardrails": ["slow_near_humans", "zone_lock"]}
++    provenance = build_provenance_attestation(
++        robot,
++        robot_did=kp.did,
++        model_name=MODEL_NAME,
++        weights_hash="uER2-WEIGHTS-DIGEST",
++        safety_policy="did:web:acme.example.com#safety-policy-v3",
++        config=config,
++        version="2.0.0",
++    )
++    ok, psub = verify_provenance_attestation(provenance, kp.public_key_jwk, config=config)
++    print(f"loaded brain: {psub['vla']['modelName']}  (provenance verifies: {ok})\n")
++
++    # The enforced physical envelope the brain must stay inside.
++    scope_cred = build_physical_scope_credential(
++        robot,
++        subject_did=kp.did,
++        max_force_n=100.0,
++        max_speed_mps=2.0,
++        max_speed_near_humans_mps=0.5,
++        allowed_zones=["assembly-cell-3"],
++    )
++    scope = scope_cred["credentialSubject"]["physicalScope"]
++
++    # (3) The encrypted flight recorder. In production the key lives in an HSM and
++    # the log ships to hosted black-box storage; here it is a local 32-byte key.
++    blackbox = BlackBoxLog(key=os.urandom(32))
++
++    # (2) Gate every proposed action before it reaches the actuators.
++    print("brain proposes -> Vouch gate -> actuator:")
++    executed = 0
++    for label, action in PROPOSED_ACTIONS:
++        result = check_physical_action(scope, action)
++        decision = "ALLOW" if result.ok else "DENY "
++        blackbox.append(
++            "actuation_decision",
++            {
++                "action": label,
++                "allowed": result.ok,
++                "reasons": result.reasons,
++                "speedMps": action.speed_mps,
++                "zone": action.zone,
++            },
++        )
++        detail = "" if result.ok else f"  <- {'; '.join(result.reasons)}"
++        print(f"  [{decision}] {label}{detail}")
++        if result.ok:
++            executed += 1
++
++    # After the task: the black box is tamper-evident without the key, so an
++    # auditor can prove the record of what the robot did was not altered.
++    chain_ok, err = verify_blackbox_chain(blackbox.entries())
++    print(
++        f"\n{executed}/{len(PROPOSED_ACTIONS)} actions actuated; "
++        f"{len(blackbox.entries())} decisions logged."
++    )
++    print(f"black-box chain intact (tamper-evident): {chain_ok}")
++
++
++if __name__ == "__main__":
++    main()
+-- 
+2.43.0
+
