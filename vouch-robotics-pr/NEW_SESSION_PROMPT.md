@@ -59,8 +59,35 @@ respecting that only the reference SDKs carry the producer-side surface:
   vector in `test-vectors/robotics/` where relevant so credentials produced in one
   language verify in another. Build/lint/test each language the way its CI does.
 
-**PR packaging (confirm with me):** default plan — PR #1 = Task 1 + Task 2
-(Python only, small and reviewable); PR #2 = Task 3 reference-SDK ports (TS/Go/
-Rust); PR #3 = Task 3 wrapper verify-side examples (Swift/JVM/.NET/C++). Adjust if
-I say otherwise. Use the DCO sign-off the repo requires and mirror
-`.github/PULL_REQUEST_TEMPLATE.md`.
+**Task 4 — surface the two capabilities across every content/distribution channel.**
+Weave a consistent description of the two new capabilities — (a) the EU AI Act /
+ISO conformance **evidence pack**, and (b) the **VLA (Gemini Robotics ER 2)
+accountability loop** (provenance-on-load → pre-actuation scope gate → tamper-evident
+black box) — into each surface below. Reuse one consistent framing everywhere; keep
+each file in its existing format/voice. READ each file first and match its structure.
+
+| Surface | Path(s) to update |
+| --- | --- |
+| FAQs | `agents-and-skills/FAQ-DRAFT.md` and `website/src/app/faq/faq-data.ts` |
+| Help Guides | `agents-and-skills/HELP-GUIDE-DRAFT.md` and `website/src/app/help/help-data.ts` |
+| Knowledge base (website AI assistant) | `website-agent/backend/knowledge/robotics.md` (+ `conformance.md`) |
+| Claude Skill | `claude-skill/skills/vouch-protocol/SKILL.md` and `reference/robotics.md` |
+| OpenAI custom GPT | `openai-gpt/knowledge/vouch-knowledge.md`, `instructions.md`, `conversation-starters.md` |
+| Gemini gem | `gemini-gem/knowledge/vouch-knowledge.md`, `instructions.md`, `examples.md` |
+| Website demos | `website/src/app/demos/robotics/RoboticsDemos.tsx` (+ module CSS) |
+| MCP server | `packages/vouch-mcp` — it exposes **no** robotics tools today; either add robotics verbs (e.g. `check_action`, `verify_conformance`, `verify_robot_credential`) with tests, or, if that's out of scope, document the gap. Confirm with me which. |
+| Website | `website/src/app/robotics` (robotics page section) |
+
+Keep the `.md` knowledge/skill/gpt/gem edits in lockstep (they are near-duplicates by
+design — the same robotics story is mirrored across them). For the website TSX/TS
+changes, build the site (`npm run build` or the repo's command) to confirm they compile.
+
+**PR packaging (confirm with me):** default plan —
+- PR #1 = Task 1 + Task 2 (Python evidence pack widening + tests; small, reviewable).
+- PR #2 = Task 3 reference-SDK ports (TypeScript / Go / Rust).
+- PR #3 = Task 3 wrapper verify-side examples (Swift / JVM / .NET / C++).
+- PR #4 = Task 4 content/distribution surfaces (docs-heavy; split website vs.
+  knowledge-file vs. MCP-code if it gets large).
+
+Adjust if I say otherwise. Use the DCO sign-off the repo requires and mirror
+`.github/PULL_REQUEST_TEMPLATE.md`. Confirm the overall plan before opening any PR.
