@@ -1,0 +1,497 @@
+From 494d63c8e6a811f96e80896b2bf3e0d5174a6e56 Mon Sep 17 00:00:00 2001
+From: Ramprasad G <groups.rampy1@gmail.com>
+Date: Mon, 10 Aug 2026 16:11:35 +0000
+Subject: [PATCH] docs(disclosures): PAD-125 value-asserting conformance
+ predicates, PAD-126 convention-ambiguity gating
+
+PAD-125 supersedes the presence-based satisfaction predicate of PAD-079 section 3,
+which admits null-evidence conformance: a structurally complete but semantically
+empty credential set (zero-event safety record, envelope-breach motion digest,
+hardware-root label without attestation) satisfies the requirements it was meant
+to evidence. Requirements now carry a value assertion, with a dependency form so a
+descriptive field cannot stand in for the proof that substantiates it.
+
+PAD-126 discloses gating a physical action proposed by a learned model whose output
+semantics are unattested: decide against the conservative envelope over all candidate
+interpretations, so the gate may over-deny but cannot under-deny, and bind the
+candidate set and assumed interpretation into the signed decision record so historical
+decisions can be re-adjudicated once the convention is established.
+
+PAD-079 receives a dated editorial note pointing to PAD-125. Its original text is
+unaltered, preserving the integrity of its 2026-07-04 prior-art date.
+
+Signed-off-by: Ramprasad G <groups.rampy1@gmail.com>
+---
+ ...achine-checkable-regulatory-conformance.md |  14 ++
+ ...5-value-asserting-conformance-predicate.md | 186 ++++++++++++++++
+ ...onvention-ambiguity-conservative-gating.md | 205 ++++++++++++++++++
+ docs/disclosures/README.md                    |  23 ++
+ 4 files changed, 428 insertions(+)
+ create mode 100644 docs/disclosures/PAD-125-value-asserting-conformance-predicate.md
+ create mode 100644 docs/disclosures/PAD-126-convention-ambiguity-conservative-gating.md
+
+diff --git a/docs/disclosures/PAD-079-machine-checkable-regulatory-conformance.md b/docs/disclosures/PAD-079-machine-checkable-regulatory-conformance.md
+index 7ff9c68..1045461 100644
+--- a/docs/disclosures/PAD-079-machine-checkable-regulatory-conformance.md
++++ b/docs/disclosures/PAD-079-machine-checkable-regulatory-conformance.md
+@@ -12,6 +12,20 @@
+ 
+ ---
+ 
++> **Editorial note (added August 10, 2026 — the text below is unaltered as published on
++> July 4, 2026).** The satisfaction predicate described in §3 of this disclosure decides a
++> requirement to be satisfied when a presented credential matches the required type and
++> carries the required *fields*. That presence-based predicate admits **null-evidence
++> conformance**: a credential set that is structurally complete but semantically empty — a
++> safety record reporting zero events, a motion digest reporting an envelope breach, a
++> hardware-root label with no hardware-root attestation — satisfies the requirements it was
++> meant to evidence. **PAD-125** discloses the value-asserting predicate that corrects this.
++> Implementers should follow PAD-125 for the satisfaction decision; the profile structure,
++> deterministic report, report digest, and signed point-in-time attestation disclosed here
++> are unchanged and remain correct.
++
++---
++
+ ## 1. Abstract
+ 
+ A method for making regulatory conformance of a robot verifiable in the open. A
+diff --git a/docs/disclosures/PAD-125-value-asserting-conformance-predicate.md b/docs/disclosures/PAD-125-value-asserting-conformance-predicate.md
+new file mode 100644
+index 0000000..32b9db9
+--- /dev/null
++++ b/docs/disclosures/PAD-125-value-asserting-conformance-predicate.md
+@@ -0,0 +1,186 @@
++# PAD-125: Value-Asserting Conformance Predicates — Closing Null-Evidence Conformance
++
++**Identifier:** PAD-125  
++**Title:** Method for Expressing a Regulatory Conformance Requirement as a Predicate That Asserts a Value Over Credential Evidence Rather Than Its Presence, So a Structurally Complete but Semantically Empty Credential Set Cannot Certify as Conformant  
++**Publication Date:** August 10, 2026  
++**Prior Art Effective Date:** August 10, 2026  
++**Status:** Public Disclosure (Defensive Publication)  
++**Category:** Robotics / Regulatory Conformance / Verifiable Credentials  
++**Author:** Ramprasad Anandam Gaddam  
++**License:** Apache 2.0  
++**Related:** PAD-079 (Machine-Checkable Regulatory Conformance — **this disclosure supersedes the presence-based predicate of its §3**), PAD-064 (Hardware-Rooted Robot Identity), PAD-065 (Model and Config Provenance), PAD-066 (Physical Capability Scope), PAD-091 (Wear and Degradation Attestation)  
++
++---
++
++## 1. Abstract
++
++A conformance checker that decides a regulatory requirement is satisfied when a
++credential of the right type carries the required *fields* can be satisfied by evidence
++that is structurally complete and semantically empty. A robot that recorded no safety
++events, that reported breaching its operating envelope, and whose identity carries a
++hardware-root label but no hardware attestation, satisfies such a checker on every one of
++those requirements. This method replaces presence with assertion: each requirement
++carries a value predicate over the named field, so the requirement is satisfied only when
++the evidence says what the regulation requires it to say.
++
++Key innovations:
++
++- **Requirement as an assertion over evidence, not a test for its presence.** Each
++  requirement names a field *and* the predicate its value must satisfy, so a zero count,
++  a false conformance flag, or a null measurement no longer satisfies the requirement it
++  was meant to evidence.
++- **Named failure mode: null-evidence conformance.** A credential-based conformance
++  system whose predicates test presence admits an evidence set that is complete in form
++  and empty in substance, and certifies it. Naming the class lets any credential-based
++  compliance scheme test for it.
++- **Co-presence predicates for dependent fields.** A field whose evidentiary value
++  depends on a companion field (a hardware-root *kind* without a hardware-root
++  *attestation*) is asserted as a dependency, so a label cannot stand in for the proof it
++  labels.
++- **Determinism and reproducibility preserved.** The predicate is a fixed computation over
++  the same inputs, so the report remains reproducible across language implementations and
++  bindable by digest exactly as in PAD-079.
++
++---
++
++## 2. Problem Statement
++
++### 2.1 Presence is not evidence
++
++A requirement that asks whether a credential "carries field X" is satisfied by any value
++of X, including the values that mean the requirement was *not* met. A safety-record
++credential reporting `totalEvents: 0` carries the field the record-keeping requirement
++names, and so satisfies it, though it evidences that nothing was recorded.
++
++### 2.2 The failure is silent and points toward compliance
++
++The unsound predicate does not error; it returns satisfied. A checker built this way
++reports conformance most confidently in exactly the case where the least evidence exists,
++because an empty or degenerate credential set is structurally simple and complete. The
++error direction is toward certification, which is the dangerous direction.
++
++### 2.3 A negative measurement satisfies the requirement it contradicts
++
++Where a credential carries a field whose value is itself a conformance verdict — a motion
++digest reporting `withinEnvelope: false`, a monitoring flag, a pass/fail result — a
++presence test is satisfied by the value that reports non-conformance. The requirement is
++then evidenced by its own violation.
++
++### 2.4 A label can impersonate the proof it names
++
++Where a credential carries both a descriptive field and the cryptographic proof that
++substantiates it, a predicate over the descriptive field alone is satisfied by an
++identity that names a hardware root it never proves possession of.
++
++---
++
++## 3. Solution (The Invention)
++
++Each requirement in a conformance profile carries, alongside the credential type and the
++field path it names, an **expectation map**: the predicate the field's value must satisfy
++for the requirement to be considered evidenced. The checker evaluates the predicate
++against the value, not the key against the object.
++
++Four predicate forms cover the observed failure modes:
++
++- **Minimum-count** — a counted quantity must exceed a floor, so a ledger that recorded
++  nothing does not evidence a record-keeping requirement.
++- **Required-value** — a field whose value is itself a verdict must hold the conforming
++  value, so a reported envelope breach does not evidence continuous monitoring.
++- **Dependency** — a named field is evidential only when its substantiating companion
++  field is also present, so a hardware-root label without a hardware-root attestation does
++  not evidence hardware binding.
++- **Presence** — retained for fields where existence genuinely is the evidence (an
++  identifier, a digest), so the stricter forms are applied where they carry meaning rather
++  than uniformly.
++
++The checker walks the profile as before and returns the same deterministic per-requirement
++report, each entry citing its clause; only the satisfaction decision changes. The report
++digest, the signed point-in-time attestation, and its digest binding are unchanged from
++PAD-079, so the artifact format and its verification are backward compatible while the
++decision beneath them becomes sound.
++
++Because the predicate is data carried by the requirement rather than logic in the checker,
++a profile author states the assertion at the point the clause is mapped, and every
++language implementation evaluates it identically.
++
++---
++
++## 4. Prior Art Differentiation
++
++Schema validation (JSON Schema, SHACL), constraint languages, business-rule engines, and
++credential-status checking are prior art. PAD-079 — this project's own earlier
++disclosure — is prior art for machine-checkable regulatory conformance over robot
++credentials, and its §3 discloses the presence-based predicate this disclosure corrects.
++This disclosure does **not** claim conformance checking generally, nor value constraints
++generally.
++
++What is differentiated is:
++
++- **The identification of null-evidence conformance as a failure class of
++  credential-based compliance systems**: an evidence set complete in structure and empty
++  in substance certifying as conformant, with the error directed toward certification.
++- **A regulatory requirement expressed as a value assertion bound to the clause it maps
++  to**, so the conformance decision tests what the regulation requires the evidence to
++  say, not merely that a field of that name exists.
++- **A dependency predicate distinguishing a descriptive field from the cryptographic
++  proof that substantiates it**, so a label cannot satisfy a requirement that exists to
++  compel the proof.
++- **Preservation of determinism, cross-language reproducibility, and digest-bound signed
++  attestation** while strengthening the predicate, so existing conformance artifacts and
++  verifiers remain valid.
++
++Schema validation asserts that a document is well-formed; this asserts that the evidence
++substantiates a regulatory clause. The distinction is the whole of the invention: a
++credential set can be perfectly well-formed and evidence nothing.
++
++---
++
++## 5. Technical Implementation
++
++A reference design extends each profile requirement with an expectation map naming the
++predicate form and its parameter, and evaluates it in the checker before marking a
++requirement satisfied. The profiles for ISO 10218-1/-2, ISO/TS 15066, the EU Machinery
++Regulation 2023/1230, the EU AI Act high-risk requirements, and UL 3300 carry expectations
++on their counted, verdict-valued, and proof-substantiated fields. The report shape, the
++report digest, and the conformance attestation are unchanged. The open layer is the
++predicate vocabulary and its evaluation.
++
++Implementers of any credential-based compliance scheme are encouraged to test their own
++profiles for this class directly: construct an evidence set in which every counted field
++is zero, every verdict field reports non-conformance, and every proof field is absent
++while its label is present, and confirm the checker refuses it.
++
++---
++
++## 6. Claims Summary
++
++1. A method for deciding regulatory conformance over verifiable credentials in which each
++   requirement carries a predicate asserting a property of a named field's value, and the
++   requirement is satisfied only when the predicate holds.
++2. The method of claim 1 wherein a counted-evidence requirement is satisfied only above a
++   stated minimum, so a ledger recording nothing does not evidence record-keeping.
++3. The method of claim 1 wherein a field whose value is itself a conformance verdict must
++   hold the conforming value, so a reported violation does not evidence the requirement it
++   contradicts.
++4. The method of claim 1 wherein a descriptive field is evidential only when its
++   substantiating cryptographic companion field is also present, so a label does not
++   satisfy a requirement for a proof.
++5. The method of claim 1 wherein the resulting per-requirement report remains
++   deterministic, reproducible across independent implementations, referenceable by
++   digest, and embeddable in a signed point-in-time conformance attestation whose
++   verification is unchanged.
++6. The method of claim 1 applied as a test for null-evidence conformance, wherein a
++   conformance profile is validated by confirming that an evidence set that is
++   structurally complete and semantically empty is refused.
++
++---
++
++## Prior Art Declaration
++
++This document is published as a defensive disclosure to establish prior art as of
++the date above. It supersedes the presence-based satisfaction predicate disclosed in
++PAD-079 §3; PAD-079 otherwise stands as published, and its original text is unaltered.
++The methods are released under Apache 2.0 and may be freely implemented, to prevent
++patenting by any party and to keep them available to the open Vouch Protocol ecosystem
++and to the wider verifiable-credential and regulatory-compliance communities.
+diff --git a/docs/disclosures/PAD-126-convention-ambiguity-conservative-gating.md b/docs/disclosures/PAD-126-convention-ambiguity-conservative-gating.md
+new file mode 100644
+index 0000000..cf5efae
+--- /dev/null
++++ b/docs/disclosures/PAD-126-convention-ambiguity-conservative-gating.md
+@@ -0,0 +1,205 @@
++# PAD-126: Convention-Ambiguity Conservative Gating — Safe Actuation When a Model's Output Semantics Are Unattested
++
++**Identifier:** PAD-126  
++**Title:** Method for Gating a Physical Action Proposed by a Learned Model Whose Output Semantics Are Unattested, by Deciding Against the Conservative Envelope Over All Candidate Interpretations and Binding the Assumed Interpretation Into the Signed Decision Record for Later Re-Adjudication  
++**Publication Date:** August 10, 2026  
++**Prior Art Effective Date:** August 10, 2026  
++**Status:** Public Disclosure (Defensive Publication)  
++**Category:** Robotics / Physical Safety / Machine-Learning Integration / Verifiable Credentials  
++**Author:** Ramprasad Anandam Gaddam  
++**Related:** PAD-065 (Model and Config Provenance), PAD-066 (Physical Capability Scope Attenuation), PAD-069 (Confidential Tamper-Evident Robot Black Box), PAD-091 (Wear and Degradation Attestation)  
++**License:** Apache 2.0  
++
++---
++
++## 1. Abstract
++
++A robot driven by a learned vision-language-action model receives a numeric action vector
++and converts it into physical quantities — force, speed, aperture — before checking those
++quantities against a signed capability scope. That conversion rests on the model's output
++*convention*: which element means what, in what units, in which direction, under which
++normalization. The convention is documentation. It is not attested, not signed, and not
++checkable at run time, yet the safety decision depends on it entirely. Where the
++convention is inverted relative to the assumption, the derived quantity inverts, and the
++gate permits precisely the action it exists to prevent.
++
++This method treats the model's output semantics as an unattested trust boundary. The gate
++enumerates the candidate interpretations, evaluates the safety-relevant magnitude under
++each, and decides against the **conservative envelope** — the interpretation least
++favourable to permission — so the decision is sound under every candidate. It then binds
++the candidate set and the interpretation actually assumed into the signed decision record,
++so an auditor can re-adjudicate the decision once the convention is established.
++
++Key innovations:
++
++- **The semantic convention of a learned model's output treated as a trust boundary.**
++  The gap between a model's output space and a safety envelope's units is identified as an
++  unattested dependency of a physical safety decision, not an integration detail.
++- **Decision against the conservative envelope over candidate interpretations.** The
++  safety-relevant magnitude is evaluated under every candidate convention and the least
++  permissive result governs, so the gate may over-deny but cannot under-deny — the error
++  is forced into the safe direction.
++- **The assumed interpretation bound into the signed decision record.** The decision
++  carries the candidate set and the convention assumed, so the record states what it
++  depended on rather than concealing it.
++- **Re-adjudication of historical decisions.** Because each record names its assumption,
++  establishing the true convention later allows past decisions to be re-evaluated and any
++  that were unsound identified, rather than being unrecoverable.
++
++---
++
++## 2. Problem Statement
++
++### 2.1 A safety gate silently inherits an unverified assumption
++
++A capability scope bounds force, speed, and zone. A learned model emits a normalized
++vector. Something must map one to the other, and that mapping is written by hand from
++documentation, example code, or inference. Nothing in the credential chain attests it. The
++gate's soundness therefore rests on an assumption no verifier can check.
++
++### 2.2 The failure mode is inverted and points toward permission
++
++Where a convention is directional — an aperture element in which one extreme means fully
++open and the other fully closed — an inverted assumption does not merely perturb the
++estimate; it reverses it. The configuration exerting maximum force is scored as exerting
++minimum force. The gate does not fail loudly; it permits. A safety mechanism whose
++characteristic failure is silent permission is worse than none, because it is trusted.
++
++### 2.3 The assumption is invisible after the fact
++
++A black box that records the decision, the derived quantity, and the verdict does not
++record the interpretation under which the quantity was derived. An investigator reading a
++permitted action that caused harm cannot determine whether the gate was correct under a
++wrong assumption or incorrect under a right one, and cannot re-check the fleet's history
++once the convention is settled.
++
++### 2.4 The gap is systemic, not incidental
++
++Every integration of a learned action model with a bounded actuator repeats this mapping,
++independently, without attestation. As action models proliferate across heterogeneous
++hardware, the number of hand-written, unverified semantic bridges grows with the product
++of models and platforms.
++
++---
++
++## 3. Solution (The Invention)
++
++The gate does not resolve the ambiguity; it survives it, and records that it did.
++
++**Enumerate.** For each element of the action vector whose semantics are not attested, the
++integration declares the finite set of candidate interpretations it cannot rule out — for
++a directional element, the two polarities; for a scale ambiguity, the candidate units or
++normalizations.
++
++**Evaluate conservatively.** The safety-relevant physical magnitude is computed under each
++candidate. The gate decides against the envelope of those results — for a quantity bounded
++above, the pointwise maximum; for one bounded below, the minimum. Because the governing
++value is the least favourable to permission, an action admitted by the gate is admissible
++under *every* candidate interpretation. The gate may refuse an action that was in fact
++safe; it cannot admit one that was in fact unsafe on account of the ambiguity. The
++uncertainty is thereby converted from a silent hazard into a bounded, quantifiable loss of
++availability.
++
++**Bind the assumption.** The decision record — appended to the tamper-evident black box and
++covered by the same signature as the rest of the decision — carries the candidate set
++considered, the interpretation assumed as nominal, and the fact that the conservative
++envelope governed. The model provenance attestation for the running weights (PAD-065) is
++referenced, so the record ties the assumption to the exact model build it was made about.
++
++**Re-adjudicate.** When the convention is later established — by vendor attestation,
++controlled commissioning, or observed actuation — the recorded candidate set and nominal
++assumption allow every historical decision to be recomputed under the settled convention.
++Decisions that were conservative are confirmed; any that would have differed are
++identified. A fleet's accumulated history becomes re-checkable rather than
++uninterpretable.
++
++Where the convention is subsequently attested, the gate narrows its candidate set to the
++attested interpretation and the conservative envelope collapses to the true value,
++recovering the availability the conservatism cost. The method therefore degrades to the
++ordinary gate as attestation improves, rather than imposing a permanent penalty.
++
++---
++
++## 4. Prior Art Differentiation
++
++Interval arithmetic, worst-case and robust control, conservative approximation under
++parameter uncertainty, fail-safe design, runtime verification, safety envelopes, control
++barrier functions, and unit-checking type systems are all prior art. This disclosure does
++**not** claim conservative bounding under uncertainty generally, nor safety filters
++generally, nor unit checking generally.
++
++What is differentiated is:
++
++- **Identifying the semantic convention of a learned model's output as an unattested trust
++  boundary of a credential-bounded physical safety decision**, distinct from parameter
++  uncertainty in a known model: the quantity is not imprecisely known, its *meaning* is
++  unestablished.
++- **Applying a conservative envelope across candidate semantic interpretations rather than
++  across numeric error bounds**, so soundness is obtained over a discrete set of possible
++  meanings rather than a continuous range of possible values.
++- **Binding the candidate set and the assumed interpretation into the signed,
++  tamper-evident decision record**, so the safety decision discloses the assumption it
++  rests on and remains attributable to a specific attested model build.
++- **Re-adjudication of historical decisions against a later-established convention**, so an
++  unattested assumption produces a recoverable record rather than an unrecoverable one.
++- **Graceful collapse to the exact gate once the convention is attested**, so the
++  availability cost of conservatism is temporary and tied to the absence of attestation.
++
++Robust control chooses a controller sound across a plant's uncertain parameters; this
++chooses an admissibility decision sound across an action vector's uncertain *semantics*,
++and signs which semantics it assumed so the choice can be audited and revisited.
++
++---
++
++## 5. Technical Implementation
++
++A reference design declares, per model integration, the candidate interpretation set for
++each ambiguous element of the action vector; derives the safety-relevant magnitudes under
++each candidate; takes the direction-appropriate envelope; and submits the governing value
++to the ordinary physical-capability-scope check (PAD-066). The decision, the candidate set,
++the nominal assumption, and a reference to the model provenance attestation (PAD-065) are
++appended to the black box (PAD-069) under one signature. A re-adjudication routine
++recomputes recorded decisions against a supplied settled convention and reports any that
++would have differed.
++
++The method is model-agnostic and applies to any learned policy emitting an action vector
++whose element semantics are not cryptographically attested by the model publisher. The
++correct long-term remedy is for publishers to attest output semantics alongside weights;
++until that exists, this method makes the gap safe and auditable rather than silent.
++
++---
++
++## 6. Claims Summary
++
++1. A method for gating a physical action proposed by a learned model, in which the
++   semantics of one or more elements of the model's output are unattested, comprising
++   enumerating the candidate interpretations, deriving the safety-relevant magnitude under
++   each, and deciding admissibility against the interpretation least favourable to
++   permission.
++2. The method of claim 1 wherein an action admitted by the gate is admissible under every
++   enumerated candidate interpretation, so ambiguity can cause refusal of a safe action but
++   cannot cause admission of an unsafe one.
++3. The method of claim 1 wherein the candidate set and the interpretation assumed as
++   nominal are bound into a signed, tamper-evident decision record covering the same
++   decision.
++4. The method of claim 3 wherein the decision record references the provenance attestation
++   of the exact model build whose output was interpreted.
++5. The method of claim 3 wherein historical decision records are recomputed against a
++   subsequently established convention, and decisions that would have differed are
++   identified.
++6. The method of claim 1 wherein, upon attestation of the true convention, the candidate
++   set narrows to the attested interpretation and the decision reverts to the exact
++   magnitude, recovering availability lost to conservatism.
++7. The method of claim 1 wherein the safety-relevant magnitude is bounded above and the
++   governing value is the pointwise maximum over candidates, or is bounded below and the
++   governing value is the pointwise minimum.
++
++---
++
++## Prior Art Declaration
++
++This document is published as a defensive disclosure to establish prior art as of
++the date above. The methods are released under Apache 2.0 and may be freely
++implemented, to prevent patenting by any party and to keep them available to the
++open Vouch Protocol ecosystem and to the wider robotics and machine-learning-safety
++communities.
+diff --git a/docs/disclosures/README.md b/docs/disclosures/README.md
+index c5021f5..1a04e29 100644
+--- a/docs/disclosures/README.md
++++ b/docs/disclosures/README.md
+@@ -134,6 +134,29 @@ These disclosures establish prior art for novel concepts, preventing others from
+ | [PAD-122](./PAD-122-byzantine-sensor-agreement-provenance.md) | Byzantine Sensor Agreement via Cross-Checked Signed Perception Provenance | 2026-07-19 | Published |
+ | [PAD-123](./PAD-123-mutual-attestation-mesh-trust-graph.md) | Mutual-Attestation Mesh: A Live Offline Trust Graph | 2026-07-19 | Published |
+ | [PAD-124](./PAD-124-dtn-bundle-custody-credential-binding.md) | Binding Verifiable-Credential Trust to DTN Bundle Custody | 2026-07-19 | Published |
++| [PAD-125](./PAD-125-value-asserting-conformance-predicate.md) | Value-Asserting Conformance Predicates: Closing Null-Evidence Conformance | 2026-08-10 | Published |
++| [PAD-126](./PAD-126-convention-ambiguity-conservative-gating.md) | Convention-Ambiguity Conservative Gating for Unattested Model Output Semantics | 2026-08-10 | Published |
++
++
++## August 10, 2026: Conformance Soundness and Model-Semantics Safety (PAD-125 to PAD-126)
++
++Two disclosures arising from hardening the robotics conformance and VLA-gating stack.
++PAD-125 supersedes the presence-based satisfaction predicate of PAD-079 §3: a conformance
++checker that tests whether a credential *carries* a field is satisfied by evidence that is
++structurally complete and semantically empty — a safety record of zero events, a motion
++digest reporting an envelope breach, a hardware-root label with no attestation — and
++certifies it. The corrected predicate asserts the value the clause requires, and the
++failure class ("null-evidence conformance") is named so any credential-based compliance
++scheme can test for it. PAD-126 addresses a distinct hazard: a learned action model's
++output semantics (which element, which units, which direction) are documentation, not
++attestation, so a safety gate converting model output into physical quantities inherits an
++uncheckable assumption whose inverted failure mode points toward *permission*. The gate
++decides against the conservative envelope over all candidate interpretations — so it may
++over-deny but cannot under-deny — and binds the candidate set and assumed interpretation
++into the signed decision record, making historical decisions re-adjudicable once the
++convention is established. Both differentiate against their prior art (schema validation
++and constraint languages; interval arithmetic, robust control, and safety filters) rather
++than claiming the general mechanisms.
+ 
+ 
+ ## July 19, 2026: Disconnected-Edge Trust, Full Set (PAD-112 to PAD-124)
+-- 
+2.43.0
+
